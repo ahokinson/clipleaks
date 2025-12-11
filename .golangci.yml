@@ -1,0 +1,78 @@
+# golangci-lint configuration for Clipleaks
+# See https://golangci-lint.run/usage/configuration/
+
+version: "2"
+
+run:
+  timeout: 5m
+  tests: true
+  modules-download-mode: readonly
+
+linters-settings:
+  errcheck:
+    exclude-functions:
+      - fmt.Fprintf
+      - fmt.Fprintln
+      - fmt.Fprint
+  funlen:
+    lines: 100
+    statements: 50
+  gocognit:
+    min-complexity: 50
+  gocyclo:
+    min-complexity: 20
+  revive:
+    rules:
+      - name: exported
+        disabled: true
+      - name: package-comments
+        disabled: true
+  gosec:
+    excludes:
+      - G304  # File path from variable (needed for config files)
+      - G204  # Subprocess with variable (needed for system commands)
+
+linters:
+  enable:
+    # Default linters
+    - errcheck      # Check for unchecked errors
+    - govet         # Vet examines Go source code
+    - ineffassign   # Detect ineffectual assignments
+    - staticcheck   # Advanced Go linter
+    - unused        # Check for unused code
+    
+    # Additional security linters
+    - gosec         # Security problems
+    
+    # Code quality
+    - gocyclo       # Cyclomatic complexity
+    - misspell      # Spelling mistakes
+    - unconvert     # Unnecessary type conversions
+    - unparam       # Unused function parameters
+    - goconst       # Repeated strings that could be constants
+    - gocritic      # Opinionated Go linter
+    - gocognit      # Cognitive complexity
+    - nestif        # Deeply nested if statements
+    - prealloc      # Slice preallocation
+    
+    # Error handling
+    - errname       # Error naming conventions
+    - errorlint     # Error wrapping
+    
+    # Style
+    - revive        # Fast, configurable, extensible linter
+    - sloglint      # Consistent slog usage
+    
+    # Performance
+    - bodyclose     # HTTP response body close
+    - noctx         # HTTP requests without context
+    
+    # Bugs
+    - nilnil        # Return nil, nil
+    - nilerr        # Return nil error with non-nil value
+    - makezero      # Slice initialization
+    
+    # Maintainability
+    - dupl          # Code duplication
+    - funlen        # Function length
+    - maintidx      # Maintainability index

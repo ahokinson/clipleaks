@@ -1,0 +1,14 @@
+[Unit]
+Description=Clipleaks - Clipboard Security Monitor
+After=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart={{.ExecPath}}
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=default.target

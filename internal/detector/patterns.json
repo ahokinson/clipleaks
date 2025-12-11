@@ -1,0 +1,70 @@
+{
+  "patterns": [
+    {
+      "id": "aws-access-key",
+      "name": "AWS Access Key",
+      "description": "Detects AWS Access Key IDs",
+      "regex": "(A3T[A-Z0-9]|AKIA|AGPA|AIDA|AROA|AIPA|ANPA|ANVA|ASIA)[A-Z0-9]{16}"
+    },
+    {
+      "id": "github-token",
+      "name": "GitHub Token",
+      "description": "Detects GitHub personal access tokens",
+      "regex": "ghp_[0-9a-zA-Z]{36}"
+    },
+    {
+      "id": "github-pat-classic",
+      "name": "GitHub PAT (Classic)",
+      "description": "Detects GitHub classic personal access tokens",
+      "regex": "[gG][iI][tT][hH][uU][bB][\\s_-]*[0-9a-zA-Z]{40}"
+    },
+    {
+      "id": "generic-api-key",
+      "name": "Generic API Key",
+      "description": "Detects generic API keys",
+      "regex": "[aA][pP][iI][_-]?[kK][eE][yY][\\s:=]*['\"][0-9a-zA-Z]{32,45}['\"]"
+    },
+    {
+      "id": "slack-token",
+      "name": "Slack Token",
+      "description": "Detects Slack tokens",
+      "regex": "xox[pborsa]-[0-9]{12}-[0-9]{12}-[0-9]{12}-[a-z0-9]{32}"
+    },
+    {
+      "id": "slack-webhook",
+      "name": "Slack Webhook",
+      "description": "Detects Slack webhook URLs",
+      "regex": "https://hooks\\.slack\\.com/services/T[a-zA-Z0-9_]{8}/B[a-zA-Z0-9_]{8}/[a-zA-Z0-9_]{24}"
+    },
+    {
+      "id": "stripe-api-key",
+      "name": "Stripe API Key",
+      "description": "Detects Stripe API keys",
+      "regex": "sk_live_[0-9a-zA-Z]{24}"
+    },
+    {
+      "id": "google-api-key",
+      "name": "Google API Key",
+      "description": "Detects Google API keys",
+      "regex": "AIza[0-9A-Za-z\\-_]{35}"
+    },
+    {
+      "id": "private-key",
+      "name": "Private Key",
+      "description": "Detects private key headers",
+      "regex": "-----BEGIN (RSA |DSA |EC )?PRIVATE KEY-----"
+    },
+    {
+      "id": "password-in-url",
+      "name": "Password in URL",
+      "description": "Detects passwords embedded in URLs",
+      "regex": "[a-zA-Z]{3,10}://[a-zA-Z0-9._-]{3,20}:[^:@\\s]{3,20}@[a-zA-Z0-9.-]+"
+    },
+    {
+      "id": "jwt-token",
+      "name": "JWT Token",
+      "description": "Detects JSON Web Tokens",
+      "regex": "eyJ[A-Za-z0-9-_=]+\\.eyJ[A-Za-z0-9-_=]+\\.?[A-Za-z0-9-_.+/=]*"
+    }
+  ]
+}

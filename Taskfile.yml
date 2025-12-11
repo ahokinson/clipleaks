@@ -1,0 +1,116 @@
+version: '3'
+
+vars:
+  BINARY_NAME: clipleaks
+  VERSION:
+    sh: git describe --tags --always --dirty 2>/dev/null || echo "dev"
+  COMMIT:
+    sh: git rev-parse --short HEAD 2>/dev/null || echo "none"
+  DATE:
+    sh: date -u +"%Y-%m-%dT%H:%M:%SZ"
+  BUILT_BY: task
+  LDFLAGS: -s -w -X main.version={{.VERSION}} -X main.commit={{.COMMIT}} -X main.date={{.DATE}} -X main.builtBy={{.BUILT_BY}}
+
+tasks:
+  default:
+    desc: Build the binary
+    cmds:
+      - task: build
+
+  build:
+    desc: Build the Clipleaks binary with version info
+    cmds:
+      - go build -ldflags="{{.LDFLAGS}}" -o {{.BINARY_NAME}} cmd/clipleaks/main.go
+    sources:
+      - cmd/**/*.go
+      - internal/**/*.go
+    generates:
+      - "{{.BINARY_NAME}}"
+
+  build-all:
+    desc: Build for all platforms with version info
+    cmds:
+      - GOOS=darwin GOARCH=amd64 go build -ldflags="{{.LDFLAGS}}" -o {{.BINARY_NAME}}-darwin-amd64 cmd/clipleaks/main.go
+      - GOOS=darwin GOARCH=arm64 go build -ldflags="{{.LDFLAGS}}" -o {{.BINARY_NAME}}-darwin-arm64 cmd/clipleaks/main.go
+      - GOOS=linux GOARCH=amd64 go build -ldflags="{{.LDFLAGS}}" -o {{.BINARY_NAME}}-linux-amd64 cmd/clipleaks/main.go
+      - GOOS=linux GOARCH=arm64 go build -ldflags="{{.LDFLAGS}}" -o {{.BINARY_NAME}}-linux-arm64 cmd/clipleaks/main.go
+
+  install:
+    desc: Install Clipleaks as a background service
+    deps: [build]
+    cmds:
+      - ./{{.BINARY_NAME}} -install
+
+  uninstall:
+    desc: Uninstall Clipleaks background service
+    cmds:
+      - ./{{.BINARY_NAME}} -uninstall
+
+  status:
+    desc: Check Clipleaks service status
+    cmds:
+      - ./{{.BINARY_NAME}} -status
+
+  run:
+    desc: Run Clipleaks in foreground
+    deps: [build]
+    cmds:
+      - ./{{.BINARY_NAME}}
+
+  test:
+    desc: Run tests
+    cmds:
+      - go test -v ./...
+
+  test-coverage:
+    desc: Run tests with coverage
+    cmds:
+      - go test -v -coverprofile=coverage.out ./...
+      - go tool cover -html=coverage.out -o coverage.html
+
+  clean:
+    desc: Clean build artifacts
+    cmds:
+      - rm -f {{.BINARY_NAME}}
+      - rm -f {{.BINARY_NAME}}-*
+      - rm -f coverage.out coverage.html
+
+  fmt:
+    desc: Format code
+    cmds:
+      - go fmt ./...
+
+  lint:
+    desc: Run golangci-lint
+    cmds:
+      - golangci-lint run
+
+  lint-fix:
+    desc: Run golangci-lint with auto-fix
+    cmds:
+      - golangci-lint run --fix
+
+  tidy:
+    desc: Tidy go modules
+    cmds:
+      - go mod tidy
+
+  version:
+    desc: Show version
+    cmds:
+      - ./{{.BINARY_NAME}} -version
+
+  check:
+    desc: Run all checks (fmt, lint, test)
+    cmds:
+      - task: fmt
+      - task: lint
+      - task: test
+
+  ci:
+    desc: Run CI checks
+    cmds:
+      - go mod tidy
+      - go fmt ./...
+      - golangci-lint run
+      - go test -v -race -coverprofile=coverage.out ./...

@@ -1,0 +1,73 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    name: Build and Release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+
+      - name: Set version variables
+        id: version
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/}
+          COMMIT=$(git rev-parse --short HEAD)
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+          echo "COMMIT=$COMMIT" >> $GITHUB_OUTPUT
+
+      - name: Build for all platforms
+        env:
+          VERSION: ${{ steps.version.outputs.VERSION }}
+          COMMIT: ${{ steps.version.outputs.COMMIT }}
+        run: |
+          LDFLAGS="-s -w -X main.version=${VERSION} -X main.commit=${COMMIT}"
+          
+          GOOS=darwin GOARCH=arm64 go build -ldflags="$LDFLAGS" -o clipleaks cmd/clipleaks/main.go
+          tar -czf clipleaks-${VERSION}-darwin-arm64.tar.gz clipleaks
+          rm clipleaks
+          
+          GOOS=linux GOARCH=amd64 go build -ldflags="$LDFLAGS" -o clipleaks cmd/clipleaks/main.go
+          tar -czf clipleaks-${VERSION}-linux-amd64.tar.gz clipleaks
+          rm clipleaks
+          
+          GOOS=linux GOARCH=arm64 go build -ldflags="$LDFLAGS" -o clipleaks cmd/clipleaks/main.go
+          tar -czf clipleaks-${VERSION}-linux-arm64.tar.gz clipleaks
+          rm clipleaks
+
+      - name: Generate checksums
+        run: |
+          sha256sum clipleaks-*.tar.gz > checksums.txt
+          cat checksums.txt
+
+      - name: Create Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.version.outputs.VERSION }}
+        run: |
+          PRERELEASE=""
+          if [[ "$VERSION" == *"alpha"* ]] || [[ "$VERSION" == *"beta"* ]] || [[ "$VERSION" == *"rc"* ]]; then
+            PRERELEASE="--prerelease"
+          fi
+          
+          gh release create "$VERSION" \
+            clipleaks-*.tar.gz \
+            checksums.txt \
+            --title "$VERSION" \
+            --generate-notes \
+            $PRERELEASE
