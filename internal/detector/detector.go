@@ -6,8 +6,8 @@ import (
 )
 
 const (
-	MaxPatternMatchSize = 10 * 1024 // 10KB - prevents ReDoS while allowing any reasonable secret
-	PatternOverlapSize  = 200       // Extra bytes to scan beyond limit to catch patterns at boundary
+	MaxPatternMatchSize = 10 * 1024
+	PatternOverlapSize  = 200
 )
 
 type Finding struct {
@@ -143,57 +143,75 @@ func (d *detector) scanPatternWithContext(ctx context.Context, text string, patt
 	default:
 	}
 
-	scanText := d.prepareScanText(text, pattern.ID)
-	matches := pattern.Regex.FindAllStringIndex(scanText, -1)
+	// Adjacent chunks overlap by patternOverlapSize bytes so secrets straddling a
+	// chunk boundary are still matched. seenStarts is shared across all chunks so a
+	// secret that falls inside an overlap region (present in two chunks) is reported
+	// once, keyed on its absolute start index.
+	step := d.patternMatchSize - d.patternOverlapSize
+	if step < 1 {
+		step = 1
+	}
+	seenStarts := make(map[int]bool)
 
-	if len(matches) > 0 {
-		slog.Debug("Pattern matched",
+	offset := 0
+	for offset < len(text) {
+		select {
+		case <-ctx.Done():
+			return findings
+		default:
+		}
+
+		chunkEnd := offset + d.patternMatchSize
+		if chunkEnd > len(text) {
+			chunkEnd = len(text)
+		}
+
+		scanText := text[offset:chunkEnd]
+		matches := pattern.Regex.FindAllStringIndex(scanText, -1)
+
+		if len(matches) > 0 {
+			slog.Debug("Pattern matched in chunk",
+				"pattern_id", pattern.ID,
+				"match_count", len(matches),
+				"chunk_offset", offset,
+				"chunk_size", len(scanText))
+		}
+
+		chunkFindings := d.processMatchesWithOffset(scanText, matches, pattern, offset, seenStarts)
+		findings = append(findings, chunkFindings...)
+
+		if chunkEnd == len(text) {
+			break
+		}
+
+		offset += step
+		if offset >= len(text) {
+			break
+		}
+	}
+
+	if len(findings) > 0 {
+		slog.Debug("Pattern scan completed",
 			"pattern_id", pattern.ID,
-			"match_count", len(matches))
+			"total_findings", len(findings))
 	}
 
-	return d.processMatches(scanText, matches, pattern)
+	return findings
 }
 
-func (d *detector) prepareScanText(text string, patternID string) string {
-	if len(text) <= d.patternMatchSize {
-		return text
-	}
-
-	scanLimit := d.patternMatchSize + d.patternOverlapSize
-	if scanLimit > len(text) {
-		scanLimit = len(text)
-	}
-
-	slog.Debug("Text limited for pattern matching",
-		"pattern_id", patternID,
-		"original_size", len(text),
-		"scan_size", scanLimit,
-		"overlap_bytes", d.patternOverlapSize)
-
-	return text[:scanLimit]
-}
-
-func (d *detector) processMatches(scanText string, matches [][]int, pattern Pattern) []Finding {
+func (d *detector) processMatchesWithOffset(scanText string, matches [][]int, pattern Pattern, offset int, seenStarts map[int]bool) []Finding {
 	var findings []Finding
 
 	for _, match := range matches {
-		if match[0] >= d.patternMatchSize {
-			slog.Debug("Skipping match in overlap region",
-				"pattern_id", pattern.ID,
-				"match_start", match[0],
-				"pattern_match_size", d.patternMatchSize)
+		absoluteStart := offset + match[0]
+
+		if seenStarts[absoluteStart] {
 			continue
 		}
+		seenStarts[absoluteStart] = true
 
 		matchedText := scanText[match[0]:match[1]]
 		entropy := CalculateEntropy(matchedText)
-
-		// TODO: Entropy threshold filtering is not yet implemented.
-		// The entropy value is calculated and logged, but not used to filter findings.
-		// This feature requires better tuning and understanding of appropriate thresholds
-		// for different pattern types before it can be reliably used to reduce false positives.
-		// See config.EntropyThreshold and config.EnableEntropy for the intended configuration.
 
 		findings = append(findings, Finding{
 			PatternID:   pattern.ID,
@@ -201,8 +219,8 @@ func (d *detector) processMatches(scanText string, matches [][]int, pattern Patt
 			Description: pattern.Description,
 			Match:       matchedText,
 			Entropy:     entropy,
-			StartIndex:  match[0],
-			EndIndex:    match[1],
+			StartIndex:  absoluteStart,
+			EndIndex:    offset + match[1],
 		})
 	}
 

@@ -1,4 +1,4 @@
-package monitor
+package process
 
 import (
 	"context"
@@ -16,8 +16,8 @@ import (
 	"github.com/ahokinson/clipleaks/internal/config"
 	"github.com/ahokinson/clipleaks/internal/detector"
 	"github.com/ahokinson/clipleaks/internal/logger"
-	"github.com/ahokinson/clipleaks/internal/monitor/limit"
 	"github.com/ahokinson/clipleaks/internal/notification"
+	"github.com/ahokinson/clipleaks/internal/process/limit"
 )
 
 const (
@@ -34,7 +34,7 @@ const (
 	NotificationTitleSecurityAlert = "Security Alert"
 )
 
-type Monitor struct {
+type Process struct {
 	cfg      *config.Config
 	detector detector.Scanner
 	notifier notification.Notifier
@@ -51,7 +51,7 @@ type Monitor struct {
 	errCh  chan error
 }
 
-func New(cfg *config.Config, stdout io.Writer) *Monitor {
+func New(cfg *config.Config, stdout io.Writer) *Process {
 	var detectorOpts []detector.Option
 	if len(cfg.DisabledPatterns) > 0 {
 		detectorOpts = append(detectorOpts, detector.WithDisabledPatterns(cfg.DisabledPatterns...))
@@ -68,7 +68,7 @@ func New(cfg *config.Config, stdout io.Writer) *Monitor {
 		clipboard.WithDebounceInterval(DefaultClipboardDebounceInterval),
 	)
 
-	return &Monitor{
+	return &Process{
 		cfg:      cfg,
 		detector: det,
 		notifier: notifier,
@@ -79,44 +79,44 @@ func New(cfg *config.Config, stdout io.Writer) *Monitor {
 	}
 }
 
-func (m *Monitor) Run() error {
-	return m.RunWithContext(context.Background())
+func (p *Process) Run() error {
+	return p.RunWithContext(context.Background())
 }
 
-func (m *Monitor) RunWithContext(ctx context.Context) error {
-	m.initOnce.Do(func() {
-		m.initErr = m.initialize()
+func (p *Process) RunWithContext(ctx context.Context) error {
+	p.initOnce.Do(func() {
+		p.initErr = p.initialize()
 	})
-	if m.initErr != nil {
-		return fmt.Errorf("failed to initialize monitor: %w", m.initErr)
+	if p.initErr != nil {
+		return fmt.Errorf("failed to initialize process: %w", p.initErr)
 	}
 
-	m.ctx, m.cancel = context.WithCancel(ctx)
-	defer func() { _ = m.Close() }()
+	p.ctx, p.cancel = context.WithCancel(ctx)
+	defer func() { _ = p.Close() }()
 
-	m.wg.Add(1)
-	go m.handleSignals()
+	p.wg.Add(1)
+	go p.handleSignals()
 
-	m.wg.Add(1)
-	go m.runMonitoring()
+	p.wg.Add(1)
+	go p.runMonitoring()
 
-	if err := m.notifier.Notify(NotificationTitleStartup, NotificationMessageStartup); err != nil {
+	if err := p.notifier.Notify(NotificationTitleStartup, NotificationMessageStartup); err != nil {
 		slog.Error("Notification system is unavailable - this is required for security alerts", "error", err)
-		m.cancel()
-		m.wg.Wait()
+		p.cancel()
+		p.wg.Wait()
 		return fmt.Errorf("notification system unavailable: %w", err)
 	}
 
 	slog.Info("Clipleaks is now monitoring your clipboard - Press Ctrl+C to stop")
 
-	err := <-m.errCh
+	err := <-p.errCh
 
-	m.cancel()
+	p.cancel()
 
-	m.wg.Wait()
+	p.wg.Wait()
 
 	select {
-	case additionalErr := <-m.errCh:
+	case additionalErr := <-p.errCh:
 		if err == nil || errors.Is(err, context.Canceled) {
 			err = additionalErr
 		}
@@ -131,20 +131,20 @@ func (m *Monitor) RunWithContext(ctx context.Context) error {
 	return err
 }
 
-func (m *Monitor) Close() error {
-	if m.cancel != nil {
-		m.cancel()
+func (p *Process) Close() error {
+	if p.cancel != nil {
+		p.cancel()
 	}
 	return nil
 }
 
-func (m *Monitor) initialize() error {
-	logger.Setup(m.stdout, slog.LevelInfo, false)
+func (p *Process) initialize() error {
+	logger.Setup(p.stdout, slog.LevelInfo, false)
 	return nil
 }
 
-func (m *Monitor) handleSignals() {
-	defer m.wg.Done()
+func (p *Process) handleSignals() {
+	defer p.wg.Done()
 
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
@@ -153,18 +153,18 @@ func (m *Monitor) handleSignals() {
 	select {
 	case sig := <-sigChan:
 		slog.Info("Received shutdown signal", "signal", sig)
-		m.errCh <- context.Canceled
-	case <-m.ctx.Done():
-		m.errCh <- m.ctx.Err()
+		p.errCh <- context.Canceled
+	case <-p.ctx.Done():
+		p.errCh <- p.ctx.Err()
 	}
 }
 
-func (m *Monitor) runMonitoring() {
-	defer m.wg.Done()
+func (p *Process) runMonitoring() {
+	defer p.wg.Done()
 
-	contentChan, err := m.monitor.Start(m.ctx)
+	contentChan, err := p.monitor.Start(p.ctx)
 	if err != nil {
-		m.errCh <- fmt.Errorf("failed to start clipboard monitor: %w", err)
+		p.errCh <- fmt.Errorf("failed to start clipboard monitor: %w", err)
 		return
 	}
 
@@ -174,11 +174,11 @@ func (m *Monitor) runMonitoring() {
 		select {
 		case content, ok := <-contentChan:
 			if !ok {
-				m.errCh <- nil
+				p.errCh <- nil
 				return
 			}
 
-			if !m.limiter.Allow() {
+			if !p.limiter.Allow() {
 				droppedCount++
 				if droppedCount%10 == 1 {
 					slog.Warn("Rate limit exceeded, dropping clipboard scan",
@@ -193,15 +193,15 @@ func (m *Monitor) runMonitoring() {
 				droppedCount = 0
 			}
 
-			m.processContent(content)
-		case <-m.ctx.Done():
-			m.errCh <- m.ctx.Err()
+			p.processContent(content)
+		case <-p.ctx.Done():
+			p.errCh <- p.ctx.Err()
 			return
 		}
 	}
 }
 
-func (m *Monitor) processContent(content clipboard.Content) {
+func (p *Process) processContent(content clipboard.Content) {
 	defer content.Wipe()
 
 	slog.Debug("Clipboard changed",
@@ -209,30 +209,29 @@ func (m *Monitor) processContent(content clipboard.Content) {
 		"truncated", content.Truncated,
 		"timestamp", content.Timestamp)
 
-	findings := m.detector.Scan(content.Text)
+	findings := p.detector.Scan(content.Text)
 
 	if len(findings) > 0 {
 		slog.Info("Detected secrets in clipboard",
 			"findings_count", len(findings))
 		for _, finding := range findings {
-			m.handleFinding(finding)
+			p.handleFinding(finding)
 		}
 	}
 }
 
-func (m *Monitor) handleFinding(finding detector.Finding) {
+func (p *Process) handleFinding(finding detector.Finding) {
 	slog.Info("Secret detected in clipboard",
 		"pattern_id", finding.PatternID,
 		"pattern_name", finding.PatternName,
 		"description", finding.Description,
 		"entropy", finding.Entropy,
 		"match_length", len(finding.Match),
-		"match", finding.Match,
 		"start_index", finding.StartIndex,
 		"end_index", finding.EndIndex)
 
 	message := FormatSecretDetectedMessage(finding.PatternName)
-	if err := m.notifier.Notify(NotificationTitleSecurityAlert, message); err != nil {
+	if err := p.notifier.Notify(NotificationTitleSecurityAlert, message); err != nil {
 		slog.Error("Failed to send notification for detected secret",
 			"error", err,
 			"pattern_name", finding.PatternName)

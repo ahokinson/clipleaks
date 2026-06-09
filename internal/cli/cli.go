@@ -8,7 +8,7 @@ import (
 	"log/slog"
 
 	"github.com/ahokinson/clipleaks/internal/config"
-	"github.com/ahokinson/clipleaks/internal/monitor"
+	"github.com/ahokinson/clipleaks/internal/process"
 	"github.com/ahokinson/clipleaks/internal/service"
 )
 
@@ -131,10 +131,10 @@ func (c *CLI) runMonitor() int {
 		"detection_rate_limit", *cfg.DetectionRateLimit,
 		"disabled_patterns", len(cfg.DisabledPatterns))
 
-	mon := monitor.New(cfg, c.stdout)
+	proc := process.New(cfg, c.stdout)
 
-	if err := mon.Run(); err != nil {
-		slog.Error("Monitor failed", "error", err)
+	if err := proc.Run(); err != nil {
+		slog.Error("Process failed", "error", err)
 		return 1
 	}
 
