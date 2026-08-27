@@ -43,3 +43,4 @@ config.json
 # Temporary files
 tmp/
 temp/
+/result
